@@ -3,22 +3,22 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
-from google import genai
+import google.generativeai as genai
 
 # ==========================
 # GEMINI CLIENT SETUP
 # ==========================
-gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 def ask_gemini(prompt: str) -> str:
     try:
-        resp = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",  # choose a supported Gemini model
-            contents=prompt
-        )
-        return resp.text
+        response = model.generate_content(prompt)
+        return response.text
     except Exception as e:
         return f"Gemini Error: {e}"
+
 
 # ==========================
 # STREAMLIT PAGE SETUP
