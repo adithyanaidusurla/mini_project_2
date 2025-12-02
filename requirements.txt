@@ -1,5 +1,5 @@
-streamlit==1.39.0
-pandas==2.2.2
-psycopg2-binary==2.9.9
+streamlit
+pandas
+psycopg2-binary
 google-generativeai==0.7.2
-python-dotenv==1.0.1
+python-dotenv
