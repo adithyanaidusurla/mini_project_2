@@ -3,66 +3,59 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
-from google import genai
+import google.generativeai as genai
 
-# ==========================
-# GEMINI CLIENT SETUP
-# ==========================
-gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# ---------------------------------------------------------
+# Configure Gemini
+# ---------------------------------------------------------
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel("gemini-pro")
 
-def ask_gemini(prompt: str) -> str:
+
+def ask_gemini(prompt):
+    """Send a prompt to Gemini and return text response."""
     try:
-        resp = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",  # choose a supported Gemini model
-            contents=prompt
-        )
-        return resp.text
+        response = model.generate_content(prompt)
+        return response.text
     except Exception as e:
         return f"Gemini Error: {e}"
 
-# ==========================
-# STREAMLIT PAGE SETUP
-# ==========================
-st.set_page_config(page_title="Mini Project 2", layout="wide")
 
-# ==========================
-# LOGIN PAGE
-# ==========================
-st.title("🔐 Mini Project 2 — Secure Dashboard")
-password = st.text_input("Enter password:", type="password")
+# ---------------------------------------------------------
+# Streamlit UI
+# ---------------------------------------------------------
+st.title("🔍 SQL Query Explorer + 🤖 Gemini AI Assistant")
+st.write("Interact with your PostgreSQL database and ask Gemini for help writing queries!")
 
-if password != "abc123":  # Change to your desired password
-    st.stop()
 
-st.success("Logged in successfully!")
-
-# ==========================
-# DATABASE CONNECTION
-# ==========================
-@st.cache_resource
+# ---------------------------------------------------------
+# Database Connection
+# ---------------------------------------------------------
 def get_connection():
-    return psycopg2.connect(
-        host="dpg-d4ltqca4d50c73e9pu8g-a.oregon-postgres.render.com",
-        database="mini_project_2_ga5e",
-        user="mini_project_2_ga5e_user",
-        password="n1JnTZoEbDnU982DU5aVpWwQl2EJXlF4",
-        port=5432,
-        sslmode="require",
-        cursor_factory=RealDictCursor
-    )
+    try:
+        conn = psycopg2.connect(
+            host="dpg-d4ltqca4d50c73e9pu8g-a.oregon-postgres.render.com",
+            database="mini_project_2_ga5e",
+            user="mini_project_2_ga5e_user",
+            password=os.getenv("DB_PASSWORD"),
+            sslmode="require",
+            cursor_factory=RealDictCursor
+        )
+        return conn
+    except Exception as e:
+        st.error(f"Database connection error: {e}")
+        return None
 
-conn = get_connection()
-cursor = conn.cursor()
 
-# ==========================
-# PREDEFINED SQL QUERIES (PostgreSQL compatible)
-# ==========================
-PREDEFINED = {
-    "ex1: All Regions":
-        "SELECT * FROM Region LIMIT 20;",
+# ---------------------------------------------------------
+# Predefined Queries (PostgreSQL Compatible)
+# ---------------------------------------------------------
+predefined_queries = {
+    "ex1: List all customers": """
+        SELECT * FROM Customer LIMIT 20;
+    """,
 
-    "ex2: Customer Total Sales":
-        """
+    "ex2: Customer total sales": """
         SELECT 
             C.FirstName || ' ' || C.LastName AS Name,
             SUM(P.ProductUnitPrice * OD.QuantityOrdered)::numeric(10,2) AS Total
@@ -72,137 +65,137 @@ PREDEFINED = {
         GROUP BY Name
         ORDER BY Total DESC
         LIMIT 10;
-        """,
+    """,
 
-    "ex3: Top 10 Products by Sales":
-        """
+    "ex3: Top 5 products by sales": """
         SELECT 
             P.ProductName,
-            SUM(OD.QuantityOrdered) AS TotalUnits
+            SUM(OD.QuantityOrdered * P.ProductUnitPrice)::numeric(10,2) AS Revenue
         FROM OrderDetail OD
         JOIN Product P ON OD.ProductID = P.ProductID
         GROUP BY P.ProductName
-        ORDER BY TotalUnits DESC
-        LIMIT 10;
-        """,
-
-    "ex4: Customers per Country":
-        """
-        SELECT 
-            Ctry.Country,
-            COUNT(*) AS NumCustomers
-        FROM Customer Cust
-        JOIN Country Ctry ON Cust.CountryID = Ctry.CountryID
-        GROUP BY Ctry.Country
-        ORDER BY NumCustomers DESC;
-        """,
-
-    "ex5: Orders per Day":
-        """
-        SELECT 
-            OrderDate,
-            COUNT(*) AS NumOrders
-        FROM OrderDetail
-        GROUP BY OrderDate
-        ORDER BY OrderDate;
-        """,
-
-    "ex6: Total Revenue":
-        """
-        SELECT 
-            SUM(P.ProductUnitPrice * OD.QuantityOrdered)::numeric(12,2) AS Revenue
-        FROM OrderDetail OD
-        JOIN Product P ON OD.ProductID = P.ProductID;
-        """,
-
-    "ex7: Product Categories Total Units":
-        """
-        SELECT 
-            PC.ProductCategory,
-            SUM(OD.QuantityOrdered) AS UnitsSold
-        FROM OrderDetail OD
-        JOIN Product P ON OD.ProductID = P.ProductID
-        JOIN ProductCategory PC ON P.ProductCategoryID = PC.ProductCategoryID
-        GROUP BY PC.ProductCategory
-        ORDER BY UnitsSold DESC;
-        """,
-
-    "ex8: Last 20 Orders":
-        "SELECT * FROM OrderDetail ORDER BY OrderID DESC LIMIT 20;",
-
-    "ex9: Customers with > 20 Orders":
-        """
-        SELECT 
-            C.FirstName || ' ' || C.LastName AS Name,
-            COUNT(*) AS NumOrders
-        FROM OrderDetail OD
-        JOIN Customer C ON OD.CustomerID = C.CustomerID
-        GROUP BY Name
-        HAVING COUNT(*) > 20
-        ORDER BY NumOrders DESC;
-        """,
-
-    "ex10: Average Product Price per Category":
-        """
-        SELECT 
-            PC.ProductCategory,
-            AVG(P.ProductUnitPrice)::numeric(10,2) AS AvgPrice
-        FROM Product P
-        JOIN ProductCategory PC ON P.ProductCategoryID = PC.ProductCategoryID
-        GROUP BY PC.ProductCategory;
-        """,
-
-    "ex11: Top Customers by Revenue":
-        """
-        SELECT
-            C.FirstName || ' ' || C.LastName AS Name,
-            SUM(P.ProductUnitPrice * OD.QuantityOrdered)::numeric(12,2) AS Revenue
-        FROM OrderDetail OD
-        JOIN Customer C ON OD.CustomerID = C.CustomerID
-        JOIN Product P ON OD.ProductID = P.ProductID
-        GROUP BY Name
         ORDER BY Revenue DESC
-        LIMIT 10;
-        """
+        LIMIT 5;
+    """,
+
+    "ex4: Orders with customer names": """
+        SELECT 
+            O.OrderID,
+            C.FirstName || ' ' || C.LastName AS Customer,
+            O.OrderDate
+        FROM Orders O
+        JOIN Customer C ON O.CustomerID = C.CustomerID
+        ORDER BY O.OrderDate DESC
+        LIMIT 20;
+    """,
+
+    "ex5: Average product price": """
+        SELECT AVG(ProductUnitPrice)::numeric(10,2) AS AvgPrice FROM Product;
+    """,
+
+    "ex6: Total number of orders": """
+        SELECT COUNT(*) AS TotalOrders FROM Orders;
+    """,
+
+    "ex7: Products in stock": """
+        SELECT ProductName, UnitsInStock FROM Product ORDER BY UnitsInStock DESC;
+    """,
+
+    "ex8: Customers from each city": """
+        SELECT City, COUNT(*) AS Count FROM Customer GROUP BY City ORDER BY Count DESC;
+    """,
+
+    "ex9: Most ordered product": """
+        SELECT 
+            P.ProductName,
+            SUM(OD.QuantityOrdered) AS TotalQty
+        FROM OrderDetail OD
+        JOIN Product P ON OD.ProductID = P.ProductID
+        GROUP BY P.ProductName
+        ORDER BY TotalQty DESC
+        LIMIT 1;
+    """,
+
+    "ex10: Monthly sales summary": """
+        SELECT 
+            DATE_TRUNC('month', O.OrderDate)::date AS Month,
+            SUM(OD.QuantityOrdered * P.ProductUnitPrice)::numeric(12,2) AS Revenue
+        FROM Orders O
+        JOIN OrderDetail OD ON O.OrderID = OD.OrderID
+        JOIN Product P ON OD.ProductID = P.ProductID
+        GROUP BY Month
+        ORDER BY Month;
+    """,
+
+    "ex11: Customers who spent over 1000": """
+        SELECT 
+            C.FirstName || ' ' || C.LastName AS Name,
+            SUM(OD.QuantityOrdered * P.ProductUnitPrice)::numeric(12,2) AS Total
+        FROM OrderDetail OD
+        JOIN Customer C ON OD.CustomerID = C.CustomerID
+        JOIN Product P ON OD.ProductID = P.ProductID
+        GROUP BY Name
+        HAVING SUM(OD.QuantityOrdered * P.ProductUnitPrice) > 1000
+        ORDER BY Total DESC;
+    """
 }
 
-# ==========================
-# TWO COLUMN LAYOUT
-# ==========================
-left, right = st.columns(2)
 
-# ===================================
-# LEFT COLUMN → SQL QUERY EXECUTION
-# ===================================
-with left:
-    st.header("📊 SQL Query Runner")
+# ---------------------------------------------------------
+# SELECT Query Option
+# ---------------------------------------------------------
+st.subheader("📌 Choose a Predefined Query")
+query_choice = st.selectbox("Select a query:", list(predefined_queries.keys()))
 
-    query_type = st.selectbox("Choose a type:", ["Predefined Query", "Custom Query"])
+selected_query = predefined_queries[query_choice]
+st.code(selected_query, language="sql")
 
-    if query_type == "Predefined Query":
-        selected = st.selectbox("Choose query:", list(PREDEFINED.keys()))
-        sql = PREDEFINED[selected]
-        st.code(sql, language="sql")
-    else:
-        sql = st.text_area("Write your SQL query here:")
-
-    if st.button("Run Query"):
+if st.button("Run Predefined Query"):
+    conn = get_connection()
+    if conn:
         try:
-            cursor.execute(sql)
-            rows = cursor.fetchall()
-            df = pd.DataFrame(rows)
+            df = pd.read_sql(selected_query, conn)
             st.dataframe(df)
         except Exception as e:
-            st.error(f"SQL Error: {e}")
+            st.error(f"Query Error: {e}")
+        conn.close()
 
-# ===================================
-# RIGHT COLUMN → GEMINI SQL HELPER
-# ===================================
-with right:
-    st.header("🤖 Gemini SQL Helper")
 
-    user_prompt = st.text_area("Ask Gemini anything about SQL:")
+# ---------------------------------------------------------
+# Custom Query Option
+# ---------------------------------------------------------
+st.subheader("📝 Custom SQL Query")
+custom_query = st.text_area("Write your own SQL query here:")
 
-    if st.button("Ask Gemini"):
-        answer = ask_gemini(user_prompt)
-        st.write(answer)
+if st.button("Run Custom Query"):
+    conn = get_connection()
+    if conn:
+        try:
+            df = pd.read_sql(custom_query, conn)
+            st.dataframe(df)
+        except Exception as e:
+            st.error(f"Query Error: {e}")
+        conn.close()
+
+
+# ---------------------------------------------------------
+# Gemini Helper
+# ---------------------------------------------------------
+st.subheader("🤖 Ask Gemini to Generate SQL")
+
+user_prompt = st.text_input("Ask Gemini to create a SQL query for your database:")
+
+if st.button("Ask Gemini"):
+    final_prompt = f"""
+    You are an SQL expert. The database has tables:
+    Customer, Orders, OrderDetail, Product.
+
+    Write a clean, PostgreSQL-compatible SQL query.
+
+    User request:
+    {user_prompt}
+    """
+
+    gemini_answer = ask_gemini(final_prompt)
+    st.markdown("### 📌 Gemini Response")
+    st.write(gemini_answer)
